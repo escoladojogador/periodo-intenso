@@ -23,7 +23,9 @@ Alguns sistemas de GPS não exportam isso. Esta ferramenta calcula a partir do e
 
 Os picos cobrem a gravação inteira do arquivo (aquecimento e intervalo incluídos). "Início" e "Fim" são tempo de gravação, não minuto de jogo.
 
-Limiares e janelas podem ser alterados na própria página.
+**Trava de segurança:** um segundo com velocidade acima de 40 km/h é tratado como erro de GPS e toda janela que o contenha é descartada. Se nenhuma janela sobrar, a célula mostra "—".
+
+Limiares, janelas e a velocidade máxima plausível podem ser alterados na própria página.
 
 ## Rodar local
 

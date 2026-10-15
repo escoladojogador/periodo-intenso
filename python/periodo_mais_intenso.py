@@ -23,6 +23,7 @@ LIMIAR_HSR = 19.8       # km/h
 LIMIAR_ACC = 3.0        # m/s²  (|a| > 3)
 SUAVIZA_S = 0.5         # s de média móvel na velocidade antes de derivar a aceleração (só se o CSV não trouxer aceleração)
 DUR_MIN_EVENTO_S = 0.3  # ponytail: um evento de acc/dec precisa durar >= 0.3 s; ajuste se a Polar contar diferente
+VEL_MAX = 40.0          # km/h; acima disso é erro de GPS e a janela que contiver a amostra é descartada
 
 
 # ---------- leitura tolerante ----------
@@ -104,6 +105,7 @@ def series_por_segundo(df):
         v = np.where(dt > 0, passo / np.where(dt > 0, dt, 1) * 3.6, 0)
 
     hsr = np.where(v > LIMIAR_HSR, passo, 0.0)
+    ruim = (v > VEL_MAX).astype(float)
 
     ca = acha_col(df, r"accel", r"aceler")
     if ca:
@@ -127,19 +129,22 @@ def series_por_segundo(df):
                 ev[i] += 1
 
     seg = np.floor(t).astype(int)
-    g = pd.DataFrame({"dist": passo, "hsr": hsr, "acc_dec": ev}).groupby(seg).sum()
+    g = pd.DataFrame({"dist": passo, "hsr": hsr, "acc_dec": ev, "ruim": ruim}).groupby(seg).sum()
+    g["ruim"] = (g["ruim"] > 0).astype(float)
     return g.reindex(range(0, seg.max() + 1), fill_value=0.0)
 
 
-def pico_janela(serie, w):
-    """soma móvel de w segundos -> (max, segundo inicial)"""
+def pico_janela(serie, w, ruim):
+    """soma móvel de w segundos ignorando janelas com segundo inválido -> (max, segundo inicial) ou (None, None)"""
     x = serie.to_numpy(dtype=float)
+    r = ruim.to_numpy(dtype=float)
     if len(x) < w:
-        return float(x.sum()), 0
+        return (None, None) if r.sum() else (float(x.sum()), 0)
     c = np.concatenate([[0.0], np.cumsum(x)])
-    somas = c[w:] - c[:-w]
+    cr = np.concatenate([[0.0], np.cumsum(r)])
+    somas = np.where(cr[w:] - cr[:-w] > 0, -np.inf, c[w:] - c[:-w])
     i = int(np.argmax(somas))
-    return float(somas[i]), i
+    return (None, None) if somas[i] == -np.inf else (float(somas[i]), i)
 
 
 def hms(s):
@@ -158,7 +163,11 @@ def analisar(df, nome):
     for m in JANELAS_MIN:
         w = m * 60
         for met, rot, unid in METRICAS:
-            val, i = pico_janela(g[met], w)
+            val, i = pico_janela(g[met], w, g["ruim"])
+            if val is None:
+                linhas.append({"Jogador": nome, "Janela (min)": m, "Métrica": rot, "Valor no pico": None, "Unidade": unid,
+                               "Por minuto": None, "Início": "—", "Fim": "—"})
+                continue
             linhas.append({"Jogador": nome, "Janela (min)": m, "Métrica": rot,
                            "Valor no pico": int(val) if met == "acc_dec" else round(val, 1),
                            "Unidade": unid, "Por minuto": round(val / m, 2),
@@ -185,6 +194,11 @@ def _test():
     a = np.zeros_like(t)
     a[610:612] = 4.0
     a[640:642] = -4.0
+    v2 = v.copy(); v2[620] = 50.0          # erro de GPS -> toda janela que contém 620 s é descartada
+    r2 = analisar(pd.DataFrame({"Time": t, "Speed [km/h]": v2, "Distance [m]": np.cumsum(v2 / 3.6), "Acceleration [m/s2]": a}), "T2").set_index(["Janela (min)", "Métrica"])
+    assert r2.loc[(1, "Distância total/min"), "Início"] == "00:10:21", r2.loc[(1, "Distância total/min"), "Início"]
+    assert abs(r2.loc[(1, "Distância total/min"), "Valor no pico"] - 305.8) < 1
+    assert r2.loc[(10, f"Acc+Dec > {LIMIAR_ACC} m/s²"), "Valor no pico"] == 1
     df = pd.DataFrame({"Player name": "Teste", "Time": t, "Speed [km/h]": v,
                        "Distance [m]": np.cumsum(v / 3.6), "Acceleration [m/s2]": a})
     r = analisar(df, "Teste").set_index(["Janela (min)", "Métrica"])

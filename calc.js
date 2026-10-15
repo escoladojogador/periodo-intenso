@@ -1,7 +1,7 @@
 // Período mais intenso — núcleo do cálculo (mesma lógica de GPS/periodo_mais_intenso.py).
 // Roda no navegador (index.html) e no Node (test.js). Sem dependências.
 
-const PADRAO = { janelasMin: [1, 3, 5, 10], limiarHsr: 19.8, limiarAcc: 3.0, durMinEventoS: 0.3, suavizaS: 0.5 };
+const PADRAO = { janelasMin: [1, 3, 5, 10], limiarHsr: 19.8, limiarAcc: 3.0, durMinEventoS: 0.3, suavizaS: 0.5, velMax: 40 };   // velMax: acima disso é erro de GPS; a janela que contiver a amostra é descartada
 
 function achaCol(cols, padroes, evitar = []) {
   for (let i = 0; i < cols.length; i++) {
@@ -92,11 +92,12 @@ function parseSamples(text) {
 function seriesPorSegundo(s, cfg) {
   const { t, v, passo, a } = s, n = t.length;
   const nSeg = Math.floor(t[n - 1]) + 1;
-  const dist = new Float64Array(nSeg), hsr = new Float64Array(nSeg), accDec = new Float64Array(nSeg);
+  const dist = new Float64Array(nSeg), hsr = new Float64Array(nSeg), accDec = new Float64Array(nSeg), ruim = new Float64Array(nSeg);
   for (let i = 0; i < n; i++) {
     const k = Math.floor(t[i]);
     dist[k] += passo[i];
     if (v[i] > cfg.limiarHsr) hsr[k] += passo[i];
+    if (v[i] > cfg.velMax) ruim[k] = 1;
   }
   for (const sinal of [1, -1]) {
     let dentro = false, ini = 0;
@@ -110,15 +111,19 @@ function seriesPorSegundo(s, cfg) {
       }
     }
   }
-  return { dist, hsr, accDec };
+  return { dist, hsr, accDec, ruim };
 }
 
-function picoJanela(x, w) {
-  if (x.length < w) { let s = 0; for (const y of x) s += y; return { max: s, ini: 0 }; }
-  let soma = 0;
-  for (let i = 0; i < w; i++) soma += x[i];
-  let max = soma, ini = 0;
-  for (let i = w; i < x.length; i++) { soma += x[i] - x[i - w]; if (soma > max) { max = soma; ini = i - w + 1; } }
+// ruim: 1 nos segundos com amostra inválida; uma janela que contenha algum é ignorada. Sem janela válida -> max null.
+function picoJanela(x, w, ruim) {
+  if (x.length < w) { let s = 0, r = 0; for (let i = 0; i < x.length; i++) { s += x[i]; r += ruim ? ruim[i] : 0; } return r ? { max: null, ini: null } : { max: s, ini: 0 }; }
+  let soma = 0, nRuim = 0;
+  for (let i = 0; i < w; i++) { soma += x[i]; if (ruim) nRuim += ruim[i]; }
+  let max = nRuim ? null : soma, ini = nRuim ? null : 0;
+  for (let i = w; i < x.length; i++) {
+    soma += x[i] - x[i - w]; if (ruim) nRuim += ruim[i] - ruim[i - w];
+    if (!nRuim && (max === null || soma > max)) { max = soma; ini = i - w + 1; }
+  }
   return { max, ini };
 }
 
@@ -132,11 +137,13 @@ function analisar(text, jogador, cfg = {}) {
   for (const m of cfg.janelasMin) {
     const w = m * 60;
     for (const [k, rot, unid] of metricas) {
-      const { max, ini } = picoJanela(g[k], w);
+      const { max, ini } = picoJanela(g[k], w, g.ruim);
+      if (max === null) { out.push({ Jogador: jogador, "Janela (min)": m, "Métrica": rot, "Valor no pico": null, Unidade: unid, "Por minuto": null, "Início": "—", Fim: "—" }); continue; }
       out.push({ Jogador: jogador, "Janela (min)": m, "Métrica": rot, "Valor no pico": k === "accDec" ? Math.round(max) : Math.round(max * 10) / 10,
                  Unidade: unid, "Por minuto": Math.round(max / m * 100) / 100, "Início": hms(ini), Fim: hms(ini + w) });
     }
   }
+  out.segundosExcluidos = g.ruim.reduce((a, b) => a + b, 0);
   return out;
 }
 

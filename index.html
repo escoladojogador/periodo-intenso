@@ -61,6 +61,7 @@
       <label>Alta intensidade acima de (km/h)<input type="number" id="hsr" value="19.8" step="0.1" min="0"></label>
       <label>Acc/Dec acima de (m/s²)<input type="number" id="acc" value="3" step="0.1" min="0"></label>
       <label>Duração mínima do evento acc/dec (s)<input type="number" id="dur" value="0.3" step="0.1" min="0"></label>
+      <label>Velocidade máxima plausível (km/h)<input type="number" id="vmax" value="40" step="1" min="0"></label>
     </div>
 
     <div class="row">
@@ -74,7 +75,7 @@
     <div class="tabs" id="tabs"></div>
     <div class="tabs" id="tabsMet"></div>
     <div class="tbl"><table id="tabela"></table></div>
-    <p class="aviso">Os picos são calculados sobre a gravação inteira do arquivo (aquecimento e intervalo incluídos). "Início" e "Fim" são tempo de gravação, não minuto de jogo.</p>
+    <p class="aviso">Trava de segurança: um segundo com velocidade acima do máximo plausível é tratado como erro de GPS e toda janela que o contenha é descartada. Se nenhuma janela sobrar, a célula mostra "—". Os picos são calculados sobre a gravação inteira do arquivo (aquecimento e intervalo incluídos). "Início" e "Fim" são tempo de gravação, não minuto de jogo.</p>
   </section>
 
   <details>
@@ -120,18 +121,19 @@
   $("calc").addEventListener("click", async () => {
     const cfg = {
       janelasMin: $("janelas").value.split(/[,; ]+/).map(Number).filter(x => x > 0),
-      limiarHsr: +$("hsr").value, limiarAcc: +$("acc").value, durMinEventoS: +$("dur").value,
+      limiarHsr: +$("hsr").value, limiarAcc: +$("acc").value, durMinEventoS: +$("dur").value, velMax: +$("vmax").value,
     };
     if (!cfg.janelasMin.length) { $("status").textContent = "Informe pelo menos uma janela."; return; }
-    $("calc").disabled = true; resultado = []; const erros = [];
+    $("calc").disabled = true; resultado = []; const erros = []; let excluidos = 0;
     for (let i = 0; i < arquivos.length; i++) {
       $("status").textContent = `Processando ${i + 1} de ${arquivos.length}: ${arquivos[i].name}`;
       await new Promise(r => setTimeout(r));           // deixa a tela atualizar
-      try { for (const { nome, texto } of await lerArquivo(arquivos[i])) resultado.push(...analisar(texto, nomeJogador(nome), cfg)); }
+      try { for (const { nome, texto } of await lerArquivo(arquivos[i])) { const r = analisar(texto, nomeJogador(nome), cfg); excluidos += r.segundosExcluidos; resultado.push(...r); } }
       catch (e) { erros.push(`${arquivos[i].name}: ${e.message}`); }
     }
     $("calc").disabled = false;
-    $("status").textContent = erros.length ? "Erros: " + erros.join(" | ") : `${resultado.length / (3 * cfg.janelasMin.length)} jogador(es) calculado(s).`;
+    const aviso = excluidos ? ` ${excluidos} segundo(s) com velocidade acima de ${cfg.velMax} km/h; janelas que os contêm foram descartadas.` : "";
+    $("status").textContent = (erros.length ? "Erros: " + erros.join(" | ") : `${resultado.length / (3 * cfg.janelasMin.length)} jogador(es) calculado(s).`) + aviso;
     if (resultado.length) { montarTabs(cfg.janelasMin); $("res").classList.remove("hide"); $("baixar").classList.remove("hide"); }
   });
 
@@ -161,7 +163,7 @@
     const num = new Set(["Janela (min)", "Valor no pico", "Por minuto"]);
     const esc = s => String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
     $("tabela").innerHTML = `<thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>` +
-      linhas.map(r => `<tr>${cols.map(c => `<td class="${num.has(c) ? "n" : ""}">${esc(r[c])}</td>`).join("")}</tr>`).join("") + "</tbody>";
+      linhas.map(r => `<tr>${cols.map(c => `<td class="${num.has(c) ? "n" : ""}">${r[c] == null ? "—" : esc(r[c])}</td>`).join("")}</tr>`).join("") + "</tbody>";
   }
 
   $("baixar").addEventListener("click", () => {

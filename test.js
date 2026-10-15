@@ -21,6 +21,14 @@ function sintetico() {
   ok(g(1, "Acc+Dec")["Valor no pico"] === 2, "acc 1 min");
   ok(g(10, "Acc+Dec")["Valor no pico"] === 2, "acc 10 min");
   ok(Math.abs(g(10, "Distância total")["Por minuto"] - 131.7) < 1, "dist 10 min");
+  // erro de GPS: 50 km/h em 620 s -> janelas que contêm 620 s são descartadas
+  const L2 = L.map((l, i) => i === 621 ? l.replace(/^620,25,/, "620,50,") : l);
+  const r2 = analisar(L2.join("\n"), "T2");
+  const g2 = (m, met) => r2.find(x => x["Janela (min)"] === m && x["Métrica"].startsWith(met));
+  ok(g2(1, "Distância total")["Início"] === "00:10:21", "trava: início " + g2(1, "Distância total")["Início"]);
+  ok(Math.abs(g2(1, "Distância total")["Valor no pico"] - 305.8) < 1, "trava: valor");
+  ok(g2(10, "Acc+Dec")["Valor no pico"] === 1, "trava: acc 10 min");
+  ok(r2.segundosExcluidos === 1, "trava: segundos excluídos");
   console.log("auto-teste OK");
 }
 
