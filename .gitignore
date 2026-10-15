@@ -1,0 +1,10 @@
+*.zip
+*.csv
+*.xlsx
+*.xls
+*.gpx
+*.txt
+!README*
+.DS_Store
+Thumbs.db
+.testdata/

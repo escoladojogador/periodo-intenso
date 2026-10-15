@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Período Mais Intenso</title>
+<meta name="description" content="Calcula o período mais intenso de 1, 3, 5 e 10 minutos a partir dos dados brutos do GPS (Polar Team Pro). Tudo roda no seu navegador.">
+<style>
+  :root { --bg: #f6f7f5; --card: #fff; --ink: #1b1f1c; --muted: #5f6a62; --line: #dfe3df; --brand: #0f6b3a; --brand-ink: #fff; --warn: #8a5a00; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #141815; --card: #1c211d; --ink: #eef1ec; --muted: #9aa69d; --line: #2d352f; --brand: #3fb36f; --brand-ink: #0b1a10; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.7rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+  .drop { border: 2px dashed var(--line); border-radius: 12px; padding: 36px 16px; text-align: center; cursor: pointer; transition: border-color .15s, background .15s; }
+  .drop.over, .drop:hover { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 6%, transparent); }
+  .drop input { display: none; }
+  .drop strong { color: var(--brand); }
+  .cfg { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-top: 18px; }
+  label { display: block; font-size: .85rem; color: var(--muted); }
+  input[type=number], input[type=text] { width: 100%; padding: 8px 10px; margin-top: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 18px; }
+  button { padding: 10px 18px; border: 0; border-radius: 8px; background: var(--brand); color: var(--brand-ink); font: inherit; font-weight: 600; cursor: pointer; }
+  button.sec { background: transparent; color: var(--brand); border: 1px solid var(--brand); }
+  button:disabled { opacity: .5; cursor: default; }
+  #status { color: var(--muted); font-size: .9rem; }
+  .files { font-size: .85rem; color: var(--muted); margin-top: 10px; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .tabs button { padding: 6px 14px; background: transparent; color: var(--ink); border: 1px solid var(--line); font-weight: 500; }
+  .tabs button.on { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+  .tbl { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; }
+  .aviso { font-size: .85rem; color: var(--warn); margin-top: 12px; }
+  details { margin-top: 20px; color: var(--muted); font-size: .9rem; }
+  summary { cursor: pointer; color: var(--ink); }
+  footer { color: var(--muted); font-size: .85rem; text-align: center; margin-top: 40px; }
+  footer a { color: var(--brand); }
+  .hide { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Período Mais Intenso</h1>
+  <p class="sub">Pico de 1, 3, 5 e 10 minutos a partir dos dados brutos do GPS. Seus arquivos não saem do seu computador: todo o cálculo roda aqui no navegador.</p>
+
+  <section class="card">
+    <label class="drop" id="drop">
+      <input type="file" id="arq" multiple accept=".zip,.csv">
+      <div><strong>Arraste os arquivos aqui</strong> ou clique para escolher</div>
+      <div class="files">Aceita o <b>.zip</b> exportado do Polar Team Pro (um por jogador) ou o <b>_samples.csv</b> de dentro dele. Vários de uma vez.</div>
+    </label>
+    <div class="files" id="lista"></div>
+
+    <div class="cfg">
+      <label>Janelas (min, separadas por vírgula)<input type="text" id="janelas" value="1, 3, 5, 10"></label>
+      <label>Alta intensidade acima de (km/h)<input type="number" id="hsr" value="19.8" step="0.1" min="0"></label>
+      <label>Acc/Dec acima de (m/s²)<input type="number" id="acc" value="3" step="0.1" min="0"></label>
+      <label>Duração mínima do evento acc/dec (s)<input type="number" id="dur" value="0.3" step="0.1" min="0"></label>
+    </div>
+
+    <div class="row">
+      <button id="calc" disabled>Calcular</button>
+      <button id="baixar" class="sec hide">Baixar Excel</button>
+      <span id="status"></span>
+    </div>
+  </section>
+
+  <section class="card hide" id="res">
+    <div class="tabs" id="tabs"></div>
+    <div class="tbl"><table id="tabela"></table></div>
+    <p class="aviso">Os picos são calculados sobre a gravação inteira do arquivo (aquecimento e intervalo incluídos). "Início" e "Fim" são tempo de gravação, não minuto de jogo.</p>
+  </section>
+
+  <details>
+    <summary>Como é calculado</summary>
+    <p>Cada arquivo traz amostras a 10 Hz com velocidade, distância acumulada e aceleração. A ferramenta soma por segundo a distância percorrida, a distância percorrida acima do limiar de velocidade e o número de acelerações e desacelerações iniciadas (trechos em que |a| passa do limiar por pelo menos a duração mínima). Depois passa uma janela móvel de 60, 180, 300 e 600 s sobre essas séries e guarda o máximo de cada uma, com o instante em que ocorreu.</p>
+    <p>Distância total/min é o pico da média móvel (m/min). Distância em alta intensidade e acc/dec são o pico da soma móvel na janela, também mostrados por minuto. Mesma lógica do script em Python que acompanha o repositório.</p>
+  </details>
+
+  <footer>
+    <a href="https://github.com/rafaildefonso/periodo-intenso">Código aberto</a> · Rafael Ildefonso · Escola do Jogador · <a href="https://www.instagram.com/rafael.professor">@rafael.professor</a>
+  </footer>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="calc.js"></script>
+<script>
+  const $ = id => document.getElementById(id);
+  let arquivos = [], resultado = [];
+
+  const drop = $("drop");
+  drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("over"); addFiles(e.dataTransfer.files); });
+  $("arq").addEventListener("change", e => addFiles(e.target.files));
+
+  function addFiles(fl) {
+    for (const f of fl) if (/\.(zip|csv)$/i.test(f.name) && !arquivos.some(a => a.name === f.name && a.size === f.size)) arquivos.push(f);
+    $("lista").textContent = arquivos.length ? `${arquivos.length} arquivo(s): ` + arquivos.map(f => f.name).join(" · ") : "";
+    $("calc").disabled = !arquivos.length;
+  }
+
+  // zip -> [{nome, texto}] com cada *_samples.csv; csv -> [{nome, texto}]
+  async function lerArquivo(f) {
+    if (/\.csv$/i.test(f.name)) return [{ nome: f.name, texto: await f.text() }];
+    const z = await JSZip.loadAsync(f);
+    const out = [];
+    for (const n of Object.keys(z.files)) if (/_samples\.csv$/i.test(n)) out.push({ nome: n, texto: await z.file(n).async("string") });
+    if (!out.length) throw new Error(`${f.name}: nenhum _samples.csv dentro do zip`);
+    return out;
+  }
+
+  $("calc").addEventListener("click", async () => {
+    const cfg = {
+      janelasMin: $("janelas").value.split(/[,; ]+/).map(Number).filter(x => x > 0),
+      limiarHsr: +$("hsr").value, limiarAcc: +$("acc").value, durMinEventoS: +$("dur").value,
+    };
+    if (!cfg.janelasMin.length) { $("status").textContent = "Informe pelo menos uma janela."; return; }
+    $("calc").disabled = true; resultado = []; const erros = [];
+    for (let i = 0; i < arquivos.length; i++) {
+      $("status").textContent = `Processando ${i + 1} de ${arquivos.length}: ${arquivos[i].name}`;
+      await new Promise(r => setTimeout(r));           // deixa a tela atualizar
+      try { for (const { nome, texto } of await lerArquivo(arquivos[i])) resultado.push(...analisar(texto, nomeJogador(nome), cfg)); }
+      catch (e) { erros.push(`${arquivos[i].name}: ${e.message}`); }
+    }
+    $("calc").disabled = false;
+    $("status").textContent = erros.length ? "Erros: " + erros.join(" | ") : `${resultado.length / (3 * cfg.janelasMin.length)} jogador(es) calculado(s).`;
+    if (resultado.length) { montarTabs(cfg.janelasMin); $("res").classList.remove("hide"); $("baixar").classList.remove("hide"); }
+  });
+
+  function montarTabs(janelas) {
+    const tabs = $("tabs"); tabs.innerHTML = "";
+    for (const m of ["todas", ...janelas]) {
+      const b = document.createElement("button"); b.textContent = m === "todas" ? "Todas" : `${m} min`;
+      b.onclick = () => { [...tabs.children].forEach(x => x.classList.remove("on")); b.classList.add("on"); montarTabela(m); };
+      tabs.appendChild(b);
+    }
+    tabs.children[1].click();
+  }
+
+  function montarTabela(m) {
+    const linhas = m === "todas" ? resultado : resultado.filter(r => r["Janela (min)"] === m);
+    const cols = ["Jogador", "Janela (min)", "Métrica", "Valor no pico", "Unidade", "Por minuto", "Início", "Fim"];
+    const num = new Set(["Janela (min)", "Valor no pico", "Por minuto"]);
+    const esc = s => String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+    $("tabela").innerHTML = `<thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>` +
+      linhas.map(r => `<tr>${cols.map(c => `<td class="${num.has(c) ? "n" : ""}">${esc(r[c])}</td>`).join("")}</tr>`).join("") + "</tbody>";
+  }
+
+  $("baixar").addEventListener("click", () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resultado), "Períodos intensos");
+    XLSX.writeFile(wb, "periodos_intensos.xlsx");
+  });
+</script>
+</body>
+</html>
