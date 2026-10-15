@@ -72,6 +72,7 @@
 
   <section class="card hide" id="res">
     <div class="tabs" id="tabs"></div>
+    <div class="tabs" id="tabsMet"></div>
     <div class="tbl"><table id="tabela"></table></div>
     <p class="aviso">Os picos são calculados sobre a gravação inteira do arquivo (aquecimento e intervalo incluídos). "Início" e "Fim" são tempo de gravação, não minuto de jogo.</p>
   </section>
@@ -134,18 +135,28 @@
     if (resultado.length) { montarTabs(cfg.janelasMin); $("res").classList.remove("hide"); $("baixar").classList.remove("hide"); }
   });
 
-  function montarTabs(janelas) {
-    const tabs = $("tabs"); tabs.innerHTML = "";
-    for (const m of ["todas", ...janelas]) {
-      const b = document.createElement("button"); b.textContent = m === "todas" ? "Todas" : `${m} min`;
-      b.onclick = () => { [...tabs.children].forEach(x => x.classList.remove("on")); b.classList.add("on"); montarTabela(m); };
-      tabs.appendChild(b);
+  const filtro = { janela: "todas", metrica: "todas" };
+
+  function grupoTabs(el, opcoes, chave) {
+    el.innerHTML = "";
+    for (const [valor, rotulo] of opcoes) {
+      const b = document.createElement("button"); b.textContent = rotulo;
+      b.onclick = () => { [...el.children].forEach(x => x.classList.remove("on")); b.classList.add("on"); filtro[chave] = valor; montarTabela(); };
+      el.appendChild(b);
     }
-    tabs.children[1].click();
   }
 
-  function montarTabela(m) {
-    const linhas = m === "todas" ? resultado : resultado.filter(r => r["Janela (min)"] === m);
+  function montarTabs(janelas) {
+    const metricas = [...new Set(resultado.map(r => r["Métrica"]))];
+    grupoTabs($("tabs"), [["todas", "Todas as janelas"], ...janelas.map(m => [m, `${m} min`])], "janela");
+    grupoTabs($("tabsMet"), [["todas", "Todas as métricas"], ...metricas.map(m => [m, m])], "metrica");
+    $("tabs").children[1].click();
+    $("tabsMet").children[0].click();
+  }
+
+  function montarTabela() {
+    const linhas = resultado.filter(r => (filtro.janela === "todas" || r["Janela (min)"] === filtro.janela) &&
+                                         (filtro.metrica === "todas" || r["Métrica"] === filtro.metrica));
     const cols = ["Jogador", "Janela (min)", "Métrica", "Valor no pico", "Unidade", "Por minuto", "Início", "Fim"];
     const num = new Set(["Janela (min)", "Valor no pico", "Por minuto"]);
     const esc = s => String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
