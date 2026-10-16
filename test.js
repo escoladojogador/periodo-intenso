@@ -29,6 +29,14 @@ function sintetico() {
   ok(Math.abs(g2(1, "Distância total")["Valor no pico"] - 305.8) < 1, "trava: valor");
   ok(g2(10, "Acc+Dec")["Valor no pico"] === 1, "trava: acc 10 min");
   ok(r2.segundosExcluidos === 1, "trava: segundos excluídos");
+  // nome do jogador nos formatos já vistos da Polar
+  const N = (c, t) => nomeJogador(c, t);
+  ok(N("20190810_155945_5_Lucas Silva_Lucas Silva_samples.csv") === "5 Lucas Silva", "nome: padrão antigo");
+  ok(N("20261002_141155_13_12345678901_Joao Teste_samples.csv") === "13 Joao Teste", "nome: padrão com ID");
+  ok(N("sessao/13 12345678901 Joao Teste/arquivo.csv") === "13 Joao Teste", "nome: pela pasta do zip");
+  ok(N("x.csv", "Time,Nome do jogador,Speed\n0,Maria,1") === "Maria", "nome: pela coluna");
+  ok(N("x.csv", "Time,Nome do jogador,Speed\n0,12345678901,1") === "x", "nome: coluna só com ID não vale");
+  ok(!/\d{6,}/.test(N("20261002_141155_13_12345678901_samples.csv")), "nome: nunca mostra o ID");
   console.log("auto-teste OK");
 }
 
@@ -36,8 +44,9 @@ if (process.argv.length < 4) { sintetico(); process.exit(); }
 
 const [pasta, ref] = process.argv.slice(2);
 const linhas = [];
-for (const f of fs.readdirSync(pasta).filter(f => /_samples\.csv$/i.test(f))) {
-  linhas.push(...analisar(fs.readFileSync(path.join(pasta, f), "utf8"), nomeJogador(f)));
+for (const f of fs.readdirSync(pasta, { recursive: true }).filter(f => /_samples\.csv$/i.test(f))) {   // subpastas: igual ao zip
+  const txt = fs.readFileSync(path.join(pasta, f), "utf8");
+  linhas.push(...analisar(txt, nomeJogador(f, txt)));
 }
 // referência: CSV exportado do pandas com as mesmas colunas
 const refL = fs.readFileSync(ref, "utf8").trim().split(/\r?\n/).map(l => l.split(";"));

@@ -27,6 +27,10 @@ Os picos cobrem a gravação inteira do arquivo (aquecimento e intervalo incluí
 
 Limiares, janelas e a velocidade máxima plausível podem ser alterados na própria página.
 
+**Nome do jogador:** a Polar já mudou o padrão do export entre versões. O nome é procurado nesta ordem: coluna de nome dentro do CSV, nome do arquivo (`data_hora_NUMERO_[ID]_Nome_samples.csv`), pasta do jogador dentro do zip. Blocos só de dígitos, como o ID numérico que a Polar põe nas versões novas, nunca aparecem no resultado.
+
+**Download:** "Baixar esta tabela" salva só o que está filtrado na tela; "Baixar tudo" salva o resultado completo. Em Excel (.xlsx) ou CSV com ponto e vírgula e vírgula decimal, que o Excel em português abre direto.
+
 ## Rodar local
 
 Abra `index.html` no navegador. As únicas dependências são JSZip e SheetJS, carregadas de CDN.

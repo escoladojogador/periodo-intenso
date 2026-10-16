@@ -175,13 +175,34 @@ def analisar(df, nome):
     return pd.DataFrame(linhas)
 
 
+def _so_digitos(t):
+    return bool(re.fullmatch(r"[\d.\-\s]+", t))
+
+
 def nome_jogador(df, path):
-    c = acha_col(df, r"player name", r"nome do jogador", r"^name$", r"^nome$", r"jogador")
+    """Nome em cascata: coluna no CSV, nome do arquivo, pasta do zip, nome do arquivo sem sufixo.
+    Blocos só de dígitos (ID da Polar, que pode ser um CPF) nunca aparecem."""
+    c = acha_col(df, r"player name", r"nome do jogador", r"^name$", r"^nome$", r"jogador", r"atleta")
     if c and df[c].notna().any():
-        return str(df[c].dropna().iloc[0])
-    base = os.path.splitext(os.path.basename(path))[0]
-    m = re.match(r"\d{8}_\d{6}_(\d+)_([^_]+)_", base)   # Polar: data_hora_numero_Nome_Nome_samples
-    return f"{m.group(1)} {m.group(2)}" if m else base.replace("_samples", "")
+        v = str(df[c].dropna().iloc[0]).strip()
+        if v and not _so_digitos(v):
+            return v
+    pasta, arq = os.path.split(os.path.normpath(path))
+    base = re.sub(r"_samples$", "", os.path.splitext(arq)[0], flags=re.I)
+    m = re.match(r"\d{8}_\d{6}_(\d+)_(.+)$", base)        # data_hora_NUMERO_[ID]_Nome[_Nome]
+    if m:
+        nome = next((t.strip() for t in m.group(2).split("_") if t.strip() and not _so_digitos(t)), None)
+        if nome:
+            return f"{m.group(1)} {nome}"
+    numero = m.group(1) if m else None
+    m = re.match(r"(\d+)\s+(.+)$", os.path.basename(pasta))  # pasta do zip: "NUMERO [ID] Nome"
+    if m:
+        nome = " ".join(t for t in m.group(2).split() if not _so_digitos(t))
+        if nome:
+            return f"{m.group(1)} {nome}"
+    if numero:
+        return f"Jogador {numero}"
+    return re.sub(r"[_\s]+", " ", re.sub(r"\d{6,}", "", base)).strip() or "Jogador"   # nunca expõe ID/CPF
 
 
 # ---------- auto-teste ----------
@@ -209,6 +230,12 @@ def _test():
     assert r.loc[(1, A), "Valor no pico"] == 2
     assert r.loc[(10, A), "Valor no pico"] == 2
     assert abs(r.loc[(10, D), "Por minuto"] - 131.7) < 1   # (416,7*1 + 100*9)/10
+    vazio = pd.DataFrame({"Time": [0]})
+    assert nome_jogador(vazio, "20190810_155945_5_Lucas Silva_Lucas Silva_samples.csv") == "5 Lucas Silva"
+    assert nome_jogador(vazio, "20261002_141155_13_12345678901_Joao Teste_samples.csv") == "13 Joao Teste"
+    assert nome_jogador(vazio, os.path.join("sessao", "13 12345678901 Joao Teste", "arquivo.csv")) == "13 Joao Teste"
+    assert nome_jogador(pd.DataFrame({"Nome do jogador": ["Maria"]}), "x.csv") == "Maria"
+    assert not re.search(r"\d{6,}", nome_jogador(vazio, "20261002_141155_13_12345678901_samples.csv"))
     print("auto-teste OK")
 
 

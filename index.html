@@ -20,11 +20,14 @@
   .drop strong { color: var(--brand); }
   .cfg { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-top: 18px; }
   label { display: block; font-size: .85rem; color: var(--muted); }
-  input[type=number], input[type=text] { width: 100%; padding: 8px 10px; margin-top: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; }
+  input[type=number], input[type=text], select { width: 100%; padding: 8px 10px; margin-top: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; }
   .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 18px; }
   button { padding: 10px 18px; border: 0; border-radius: 8px; background: var(--brand); color: var(--brand-ink); font: inherit; font-weight: 600; cursor: pointer; }
   button.sec { background: transparent; color: var(--brand); border: 1px solid var(--brand); }
   button:disabled { opacity: .5; cursor: default; }
+  .baixar { margin: 4px 0 14px; }
+  .fmt { display: flex; align-items: center; gap: 8px; }
+  .fmt select { width: auto; margin-top: 0; }
   #status { color: var(--muted); font-size: .9rem; }
   .files { font-size: .85rem; color: var(--muted); margin-top: 10px; }
   .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
@@ -66,7 +69,6 @@
 
     <div class="row">
       <button id="calc" disabled>Calcular</button>
-      <button id="baixar" class="sec hide">Baixar Excel</button>
       <span id="status"></span>
     </div>
   </section>
@@ -74,6 +76,16 @@
   <section class="card hide" id="res">
     <div class="tabs" id="tabs"></div>
     <div class="tabs" id="tabsMet"></div>
+    <div class="row baixar">
+      <button id="baixarVista">Baixar esta tabela</button>
+      <button id="baixarTudo" class="sec">Baixar tudo</button>
+      <label class="fmt">Formato
+        <select id="fmt">
+          <option value="xlsx">Excel (.xlsx)</option>
+          <option value="csv">CSV (; e vírgula decimal)</option>
+        </select>
+      </label>
+    </div>
     <div class="tbl"><table id="tabela"></table></div>
     <p class="aviso">Trava de segurança: um segundo com velocidade acima do máximo plausível é tratado como erro de GPS e toda janela que o contenha é descartada. Se nenhuma janela sobrar, a célula mostra "—". Os picos são calculados sobre a gravação inteira do arquivo (aquecimento e intervalo incluídos). "Início" e "Fim" são tempo de gravação, não minuto de jogo.</p>
   </section>
@@ -128,16 +140,18 @@
     for (let i = 0; i < arquivos.length; i++) {
       $("status").textContent = `Processando ${i + 1} de ${arquivos.length}: ${arquivos[i].name}`;
       await new Promise(r => setTimeout(r));           // deixa a tela atualizar
-      try { for (const { nome, texto } of await lerArquivo(arquivos[i])) { const r = analisar(texto, nomeJogador(nome), cfg); excluidos += r.segundosExcluidos; resultado.push(...r); } }
+      try { for (const { nome, texto } of await lerArquivo(arquivos[i])) { const r = analisar(texto, nomeJogador(nome, texto), cfg); excluidos += r.segundosExcluidos; resultado.push(...r); } }
       catch (e) { erros.push(`${arquivos[i].name}: ${e.message}`); }
     }
     $("calc").disabled = false;
     const aviso = excluidos ? ` ${excluidos} segundo(s) com velocidade acima de ${cfg.velMax} km/h; janelas que os contêm foram descartadas.` : "";
     $("status").textContent = (erros.length ? "Erros: " + erros.join(" | ") : `${resultado.length / (3 * cfg.janelasMin.length)} jogador(es) calculado(s).`) + aviso;
-    if (resultado.length) { montarTabs(cfg.janelasMin); $("res").classList.remove("hide"); $("baixar").classList.remove("hide"); }
+    if (resultado.length) { montarTabs(cfg.janelasMin); $("res").classList.remove("hide"); }
   });
 
   const filtro = { janela: "todas", metrica: "todas" };
+  const COLS = ["Jogador", "Janela (min)", "Métrica", "Valor no pico", "Unidade", "Por minuto", "Início", "Fim"];
+  let vista = [];
 
   function grupoTabs(el, opcoes, chave) {
     el.innerHTML = "";
@@ -157,20 +171,38 @@
   }
 
   function montarTabela() {
-    const linhas = resultado.filter(r => (filtro.janela === "todas" || r["Janela (min)"] === filtro.janela) &&
-                                         (filtro.metrica === "todas" || r["Métrica"] === filtro.metrica));
-    const cols = ["Jogador", "Janela (min)", "Métrica", "Valor no pico", "Unidade", "Por minuto", "Início", "Fim"];
+    const linhas = vista = resultado.filter(r => (filtro.janela === "todas" || r["Janela (min)"] === filtro.janela) &&
+                                                 (filtro.metrica === "todas" || r["Métrica"] === filtro.metrica));
+    const cols = COLS;
     const num = new Set(["Janela (min)", "Valor no pico", "Por minuto"]);
     const esc = s => String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
     $("tabela").innerHTML = `<thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>` +
       linhas.map(r => `<tr>${cols.map(c => `<td class="${num.has(c) ? "n" : ""}">${r[c] == null ? "—" : esc(r[c])}</td>`).join("")}</tr>`).join("") + "</tbody>";
   }
 
-  $("baixar").addEventListener("click", () => {
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resultado), "Períodos intensos");
-    XLSX.writeFile(wb, "periodos_intensos.xlsx");
+  // Excel: números como número. CSV: ";" e vírgula decimal, que é o que o Excel em português abre direto.
+  function baixar(linhas, sufixo) {
+    const nome = `periodos_intensos${sufixo}`;
+    if ($("fmt").value === "xlsx") {
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhas, { header: COLS }), "Períodos intensos");
+      XLSX.writeFile(wb, `${nome}.xlsx`);
+      return;
+    }
+    const cel = v => v == null ? "" : typeof v === "number" ? String(v).replace(".", ",") : /[;"\n]/.test(v) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
+    const csv = [COLS.join(";"), ...linhas.map(r => COLS.map(c => cel(r[c])).join(";"))].join("\r\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }));
+    a.download = `${nome}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);   // liberar na hora falha em alguns navegadores
+  }
+
+  $("baixarVista").addEventListener("click", () => {
+    const partes = [filtro.janela === "todas" ? "" : `${filtro.janela}min`, filtro.metrica === "todas" ? "" : filtro.metrica.split(/[ /]/)[0]];
+    baixar(vista, partes.filter(Boolean).map(p => "_" + p.normalize("NFD").replace(/[^\w]/g, "").toLowerCase()).join(""));
   });
+  $("baixarTudo").addEventListener("click", () => baixar(resultado, ""));
 </script>
 </body>
 </html>

@@ -147,11 +147,37 @@ function analisar(text, jogador, cfg = {}) {
   return out;
 }
 
-// Polar: data_hora_numero_Nome_Nome_samples.csv -> "numero Nome"
-function nomeJogador(nomeArquivo) {
-  const base = nomeArquivo.split("/").pop().replace(/\.csv$/i, "");
-  const m = /^\d{8}_\d{6}_(\d+)_([^_]+)_/.exec(base);
-  return m ? `${m[1]} ${m[2]}` : base.replace("_samples", "");
+// Nome do jogador, procurado em cascata (a Polar já mudou esse padrão entre versões):
+//   1. coluna de nome dentro do CSV, se existir
+//   2. nome do arquivo:  data_hora_NUMERO_[ID]_Nome[_Nome]_samples.csv
+//   3. pasta dentro do zip: "NUMERO [ID] Nome"
+//   4. nome do arquivo sem o sufixo
+// Blocos só de dígitos (ID da Polar, que pode ser um CPF) nunca aparecem no resultado.
+const soDigitos = t => /^[\d.\-\s]+$/.test(t);
+
+function nomeJogador(caminho, texto = "") {
+  const linhas = texto.split(/\r?\n/, 3);
+  if (linhas.length > 1) {
+    const sep = (linhas[0].match(/;/g) || []).length > (linhas[0].match(/,/g) || []).length ? ";" : ",";
+    const cols = linhas[0].replace(/^﻿/, "").split(sep).map(c => c.trim());
+    const i = achaCol(cols, [/player name/, /nome do jogador/, /^name$/, /^nome$/, /jogador/, /atleta/]);
+    const v = i >= 0 ? (linhas[1].split(sep)[i] || "").trim() : "";
+    if (v && !soDigitos(v)) return v;
+  }
+  const partes = caminho.replace(/\\/g, "/").split("/");
+  const base = partes.pop().replace(/\.csv$/i, "").replace(/_samples$/i, "");
+  const m = /^\d{8}_\d{6}_(\d+)_(.+)$/.exec(base);
+  if (m) {
+    const nome = m[2].split("_").map(t => t.trim()).find(t => t && !soDigitos(t));
+    if (nome) return `${m[1]} ${nome}`;
+  }
+  const pasta = /^(\d+)\s+(.+)$/.exec(partes.pop() || "");
+  if (pasta) {
+    const nome = pasta[2].split(/\s+/).filter(t => !soDigitos(t)).join(" ");
+    if (nome) return `${pasta[1]} ${nome}`;
+  }
+  if (m) return `Jogador ${m[1]}`;
+  return base.replace(/\d{6,}/g, "").replace(/[_\s]+/g, " ").trim() || "Jogador";   // nunca expõe ID/CPF
 }
 
 if (typeof module !== "undefined") module.exports = { analisar, nomeJogador, parseSamples, seriesPorSegundo, picoJanela, PADRAO };
